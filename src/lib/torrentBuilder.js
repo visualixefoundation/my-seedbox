@@ -1,10 +1,11 @@
 // torrentBuilder.js
 //
-// Wraps the `create-torrent` npm package to turn File objects (selected
-// in-browser via <input type="file"> or drag-and-drop) into a .torrent
-// file + magnet link, entirely client-side. Nothing is uploaded anywhere.
+// Wraps the `create-torrent` npm package (v6.x) to turn File objects
+// (selected in-browser via <input type="file"> or drag-and-drop) into a
+// .torrent file + magnet link, entirely client-side. Nothing is uploaded
+// anywhere.
 //
-// npm install create-torrent buffer
+// npm install create-torrent parse-torrent buffer
 
 import createTorrent from "create-torrent";
 import { Buffer } from "buffer";
@@ -25,9 +26,11 @@ if (typeof window !== "undefined" && !window.Buffer) {
  *   single file's name, or a generic "bundle" name for multi-file torrents).
  * @param {string} [options.comment] - Free-text comment/note.
  * @param {string[]} [options.announceList] - Optional tracker URLs. Leave
- *   empty/omit for a trackerless torrent (DHT + PEX only).
+ *   empty/omit for a trackerless torrent (DHT + PEX only) — note that
+ *   create-torrent normally adds public trackers automatically unless you
+ *   explicitly pass an empty array, which is what we do below.
  * @param {(percent: number) => void} [options.onProgress] - Called with
- *   0-100 as pieces are hashed.
+ *   0-100 as bytes are hashed.
  *
  * @returns {Promise<{ torrentBlob: Blob, magnetLink: string, infoHash: string, name: string, sizeBytes: number }>}
  */
@@ -47,23 +50,21 @@ export function buildTorrent(files, options = {}) {
     const createOpts = {
       name: options.name || (files.length === 1 ? files[0].name : "torrent-bundle"),
       comment: options.comment || "",
-      // Trackerless by default: DHT + PEX handle peer discovery instead.
-      // Pass announceList only if the user explicitly supplies trackers.
-      announceList: options.announceList && options.announceList.length
-        ? [options.announceList]
-        : [],
+      // Trackerless by default: pass an explicit empty array, otherwise
+      // create-torrent adds its own public trackers automatically.
+      announceList:
+        options.announceList && options.announceList.length
+          ? [options.announceList]
+          : [[]],
       private: false,
     };
 
-    // create-torrent supports a progress-style callback via its second
-    // options arg on some versions; we also expose our own throttled
-    // estimate based on the library's internal piece-hash events where
-    // available. If the installed version doesn't emit progress, this
-    // simply degrades to "no progress updates" without breaking output.
     if (typeof options.onProgress === "function") {
-      createOpts.onProgress = (torrentLength, piecesHashed, totalPieces) => {
-        if (totalPieces > 0) {
-          options.onProgress(Math.round((piecesHashed / totalPieces) * 100));
+      // Real signature: onProgress(bytesHashed, estimatedTotalSize)
+      createOpts.onProgress = (bytesHashed, estimatedTotalSize) => {
+        const total = estimatedTotalSize || sizeBytes;
+        if (total > 0) {
+          options.onProgress(Math.min(100, Math.round((bytesHashed / total) * 100)));
         }
       };
     }
@@ -78,17 +79,12 @@ export function buildTorrent(files, options = {}) {
         type: "application/x-bittorrent",
       });
 
-      // Parse back out the info hash + a magnet link. create-torrent's
-      // sibling package `parse-torrent` does this cleanly; to avoid a
-      // second dependency here, we pull the magnet URI that create-torrent
-      // can generate directly via its `toMagnetURI` if bundled, otherwise
-      // fall back to computing it via parse-torrent (recommended).
-      import("parse-torrent").then(({ default: parseTorrent }) => {
+      import("parse-torrent").then(({ default: parseTorrent, toMagnetURI }) => {
         try {
           const parsed = parseTorrent(torrentBuf);
           resolve({
             torrentBlob,
-            magnetLink: parseTorrent.toMagnetURI(parsed),
+            magnetLink: toMagnetURI(parsed),
             infoHash: parsed.infoHash,
             name: createOpts.name,
             sizeBytes,
