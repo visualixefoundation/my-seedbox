@@ -15,18 +15,27 @@ import {
   importFromJSON,
 } from "./lib/storage";
 
+function formatBytes(bytes) {
+  if (!bytes && bytes !== 0) return "";
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+}
+
 export default function App() {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [torrentName, setTorrentName] = useState("");
   const [comment, setComment] = useState("");
   const [tagsInput, setTagsInput] = useState("");
-  const [progress, setProgress] = useState(null); // 0-100 or null when idle
-  const [result, setResult] = useState(null); // { magnetLink, name, ... }
+  const [progress, setProgress] = useState(null);
+  const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
   const [savedList, setSavedList] = useState(() => getSavedTorrents());
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("date");
+  const [copied, setCopied] = useState(false);
 
   function handleFilesSelected(files, totalSize) {
     setSelectedFiles(files);
@@ -50,6 +59,7 @@ export default function App() {
     setError(null);
     setProgress(0);
     setResult(null);
+    setCopied(false);
 
     try {
       const built = await buildTorrent(selectedFiles, {
@@ -84,6 +94,8 @@ export default function App() {
   function handleCopyMagnet() {
     if (result?.magnetLink) {
       navigator.clipboard.writeText(result.magnetLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   }
 
@@ -101,130 +113,180 @@ export default function App() {
       try {
         const { imported, skipped } = importFromJSON(reader.result);
         setSavedList(getSavedTorrents({ search, sortBy }));
-        alert(`Imported ${imported} entr${imported === 1 ? "y" : "ies"}, skipped ${skipped} duplicate(s).`);
+        alert(
+          `Imported ${imported} entr${imported === 1 ? "y" : "ies"}, skipped ${skipped} duplicate(s).`
+        );
       } catch (err) {
         alert(`Import failed: ${err.message}`);
       }
     };
     reader.readAsText(file);
+    e.target.value = "";
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24, fontFamily: "sans-serif" }}>
-      <h1>Torrent Creator</h1>
-      <p>Turn your own downloaded songs into .torrent files, entirely in your browser.</p>
+    <div className="app">
+      <header className="header">
+        <h1>Torrent Creator</h1>
+        <p>Turn your own downloaded songs into .torrent files, entirely in your browser.</p>
+      </header>
 
       <FileDropzone onFilesSelected={handleFilesSelected} />
 
       {duplicateWarning && (
-        <p style={{ color: "#a15c00" }}>{duplicateWarning}</p>
+        <div className="alert alert-warning">{duplicateWarning}</div>
       )}
 
       {selectedFiles.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <label>
-            Torrent name:{" "}
+        <div className="form-card">
+          <div className="field">
+            <label htmlFor="torrent-name">Torrent name</label>
             <input
+              id="torrent-name"
               type="text"
               value={torrentName}
               onChange={(e) => setTorrentName(e.target.value)}
-              style={{ width: "100%" }}
             />
-          </label>
+          </div>
 
-          <label style={{ display: "block", marginTop: 8 }}>
-            Comment (optional):{" "}
+          <div className="field">
+            <label htmlFor="comment">Comment (optional)</label>
             <input
+              id="comment"
               type="text"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              style={{ width: "100%" }}
+              placeholder="e.g. Album name, year…"
             />
-          </label>
+          </div>
 
-          <label style={{ display: "block", marginTop: 8 }}>
-            Tags (comma-separated, e.g. gospel, instrumental):{" "}
+          <div className="field">
+            <label htmlFor="tags">Tags (comma-separated)</label>
             <input
+              id="tags"
               type="text"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
-              style={{ width: "100%" }}
+              placeholder="gospel, instrumental, live…"
             />
-          </label>
+          </div>
 
-          <button type="button" onClick={handleGenerate} style={{ marginTop: 12 }}>
-            Generate .torrent
-          </button>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleGenerate}
+              disabled={progress !== null && progress < 100}
+            >
+              {progress !== null && progress < 100 ? "Hashing…" : "Generate .torrent"}
+            </button>
+          </div>
         </div>
       )}
 
       {progress !== null && progress < 100 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ background: "#eee", borderRadius: 4, overflow: "hidden" }}>
-            <div
-              style={{
-                width: `${progress}%`,
-                background: "#4a90d9",
-                height: 8,
-                transition: "width 0.1s",
-              }}
-            />
+        <div className="progress-wrap">
+          <div className="progress-bar">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
-          <p>Hashing… {progress}%</p>
+          <p className="progress-label">Hashing… {progress}%</p>
         </div>
       )}
 
-      {error && <p style={{ color: "#c0392b" }}>{error}</p>}
+      {error && <div className="alert alert-error">{error}</div>}
 
       {result && (
-        <div style={{ marginTop: 16, padding: 16, background: "#f6f6f6", borderRadius: 8 }}>
+        <div className="result-card">
           <p>
-            <strong>Done:</strong> {result.name}
+            <strong>✓ Done:</strong> {result.name}
+            {result.sizeBytes != null && (
+              <span style={{ color: "var(--muted)", fontWeight: 400 }}>
+                {" "}· {formatBytes(result.sizeBytes)}
+              </span>
+            )}
           </p>
-          <p style={{ wordBreak: "break-all" }}>{result.magnetLink}</p>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" onClick={() => downloadTorrentFile(result.torrentBlob, result.name)}>
+          <p className="magnet-link">{result.magnetLink}</p>
+          <div className="result-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => downloadTorrentFile(result.torrentBlob, result.name)}
+            >
               Download .torrent
             </button>
-            <button type="button" onClick={handleCopyMagnet}>
-              Copy magnet link
+            <button type="button" className="btn btn-secondary" onClick={handleCopyMagnet}>
+              {copied ? "Copied!" : "Copy magnet link"}
             </button>
           </div>
         </div>
       )}
 
-      <hr style={{ margin: "32px 0" }} />
+      <section className="section">
+        <h2>Saved torrents</h2>
 
-      <h2>Saved torrents</h2>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input
-          type="text"
-          placeholder="Search by name or tag…"
-          value={search}
-          onChange={(e) => handleSearchOrSort(e.target.value, sortBy)}
-        />
-        <select value={sortBy} onChange={(e) => handleSearchOrSort(search, e.target.value)}>
-          <option value="date">Date</option>
-          <option value="name">Name</option>
-          <option value="size">Size</option>
-        </select>
-        <button type="button" onClick={downloadExportFile}>
-          Export JSON
-        </button>
-        <label style={{ cursor: "pointer" }}>
-          Import JSON
-          <input type="file" accept="application/json" style={{ display: "none" }} onChange={handleImportFile} />
-        </label>
-      </div>
+        <div className="toolbar">
+          <input
+            type="text"
+            placeholder="Search by name or tag…"
+            value={search}
+            onChange={(e) => handleSearchOrSort(e.target.value, sortBy)}
+          />
+          <select
+            value={sortBy}
+            onChange={(e) => handleSearchOrSort(search, e.target.value)}
+            aria-label="Sort by"
+          >
+            <option value="date">Date</option>
+            <option value="name">Name</option>
+            <option value="size">Size</option>
+          </select>
+          <button type="button" className="btn btn-secondary" onClick={downloadExportFile}>
+            Export JSON
+          </button>
+          <label className="btn btn-ghost" style={{ cursor: "pointer" }}>
+            Import JSON
+            <input
+              type="file"
+              accept="application/json"
+              style={{ display: "none" }}
+              onChange={handleImportFile}
+            />
+          </label>
+        </div>
 
-      <ul>
-        {savedList.map((t) => (
-          <li key={t.id}>
-            <strong>{t.name}</strong> — {t.tags.join(", ") || "no tags"} —{" "}
-            {new Date(t.createdAt).toLocaleDateString()}
-          </li>
-        ))}
-      </ul>
+        {savedList.length === 0 ? (
+          <div className="empty-state">
+            No saved torrents yet. Generate one above to get started.
+          </div>
+        ) : (
+          <ul className="saved-list">
+            {savedList.map((t) => (
+              <li key={t.id} className="saved-item">
+                <div className="saved-item-top">
+                  <span className="saved-item-name">{t.name}</span>
+                  <span className="saved-item-date">
+                    {new Date(t.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <div className="saved-item-meta">
+                  {t.sizeBytes != null && (
+                    <span className="tag-empty">{formatBytes(t.sizeBytes)}</span>
+                  )}
+                  {t.tags && t.tags.length > 0 ? (
+                    t.tags.map((tag) => (
+                      <span key={tag} className="tag">
+                        {tag}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="tag-empty">no tags</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
