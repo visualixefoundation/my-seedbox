@@ -36,9 +36,6 @@ export default function FileDropzone({ onFilesSelected }) {
         return;
       }
 
-      // Soft warning, not a hard block — some folders of lossless audio
-      // legitimately run large. Just make sure the user knows before
-      // in-browser hashing potentially takes a while.
       const LARGE_WARN_THRESHOLD = 2 * 1024 * 1024 * 1024; // 2GB
       if (totalSize > LARGE_WARN_THRESHOLD) {
         setWarning(
@@ -66,33 +63,34 @@ export default function FileDropzone({ onFilesSelected }) {
   return (
     <div>
       <div
+        className={`dropzone${isDragging ? " dragging" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
-        style={{
-          border: `2px dashed ${isDragging ? "#4a90d9" : "#999"}`,
-          borderRadius: 8,
-          padding: 32,
-          textAlign: "center",
-          background: isDragging ? "#eef6ff" : "transparent",
-          transition: "background 0.15s, border-color 0.15s",
-        }}
       >
-        <p>Drag and drop file(s) here, or:</p>
+        <div className="dropzone-icon">📁</div>
+        <p className="dropzone-label">Drag and drop file(s) here, or</p>
 
-        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <button type="button" onClick={() => fileInputRef.current?.click()}>
+        <div className="dropzone-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => fileInputRef.current?.click()}
+          >
             Choose file(s)
           </button>
-          <button type="button" onClick={() => folderInputRef.current?.click()}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => folderInputRef.current?.click()}
+          >
             Choose folder
           </button>
         </div>
 
-        {/* Multi-file picker */}
         <input
           ref={fileInputRef}
           type="file"
@@ -101,8 +99,6 @@ export default function FileDropzone({ onFilesSelected }) {
           onChange={(e) => e.target.files && handleFiles(e.target.files)}
         />
 
-        {/* Folder picker. webkitdirectory is non-standard but supported in
-            all major browsers (Chrome, Edge, Firefox, Safari 15+). */}
         <input
           ref={folderInputRef}
           type="file"
@@ -114,17 +110,18 @@ export default function FileDropzone({ onFilesSelected }) {
         />
       </div>
 
-      {warning && (
-        <p style={{ color: "#a15c00", marginTop: 8 }}>{warning}</p>
-      )}
+      {warning && <div className="alert alert-warning">{warning}</div>}
 
       {files.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <strong>{files.length} file(s) selected</strong>
-          <ul style={{ maxHeight: 200, overflowY: "auto" }}>
+        <div className="file-list">
+          <div className="file-list-header">
+            {files.length} file{files.length === 1 ? "" : "s"} selected
+          </div>
+          <ul>
             {files.map((f, i) => (
               <li key={i}>
-                {f.webkitRelativePath || f.name} — {formatBytes(f.size)}
+                <span className="file-name">{f.webkitRelativePath || f.name}</span>
+                <span className="file-size">{formatBytes(f.size)}</span>
               </li>
             ))}
           </ul>
